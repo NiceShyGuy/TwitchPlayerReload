@@ -10,7 +10,7 @@ The extension does not detect ads, change ad-blocking settings, or guarantee tha
 
 - Default delay: 1 second
 - Configurable delay: 0.1–120 seconds
-- Successful reset count: stored locally in the browser
+- Successful reset count: stored locally for the current channel. Loading or reloading Twitch does not increase it. Opening a different channel sets it back to zero.
 - Supported browser baseline: Chrome 111 or a compatible Chromium-based browser
 
 ## Load unpacked from source
@@ -37,7 +37,7 @@ Before publishing, upload the archive through the Chrome Web Store developer das
 
 ## Permissions and data
 
-The extension uses the `storage` permission for the delay and reset count, and needs access to `https://www.twitch.tv/*` to detect and reset the player. The delay uses browser sync storage; the successful-reset count uses local extension storage. The extension does not include analytics, advertising, or its own external network requests. See [PRIVACY.md](./PRIVACY.md).
+The extension uses the `storage` permission for the delay and reset count, and needs access to `https://www.twitch.tv/*` to detect and reset the player. The delay uses browser sync storage. The successful-reset count and the channel login that count belongs to use local extension storage. The extension does not include analytics, advertising, or its own external network requests. See [PRIVACY.md](./PRIVACY.md).
 
 ## Reset behavior and compatibility
 

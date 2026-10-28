@@ -5,12 +5,67 @@
   const MAX_TIMEOUT_MS = 120000;
   const MESSAGE_SOURCE = 'twitch-spinner-reset-extension';
   const REQUEST_TIMEOUT_MS = 5000;
+  const RESERVED_ROUTES = new Set([
+    'activate',
+    'annual-recap',
+    'bits',
+    'broadcast',
+    'browse',
+    'categories',
+    'checkout',
+    'clips',
+    'collection',
+    'community',
+    'content',
+    'creatorcamp',
+    'dashboard',
+    'directory',
+    'downloads',
+    'drops',
+    'embed',
+    'event',
+    'friends',
+    'gift',
+    'home',
+    'inventory',
+    'jobs',
+    'live',
+    'login',
+    'messages',
+    'moderation',
+    'moderator',
+    'p',
+    'payments',
+    'popout',
+    'prime',
+    'privacy',
+    'products',
+    'recap',
+    'safety',
+    'search',
+    'security',
+    'settings',
+    'signup',
+    'squad',
+    'store',
+    'subs',
+    'subscriptions',
+    'team',
+    'turbo',
+    'user',
+    'videos',
+    'wallet'
+  ]);
 
   let timeoutMs = DEFAULT_TIMEOUT_MS;
   let spinnerSince = null;
   let timerId = null;
   let resetAttempted = false;
   let nextRequestId = 0;
+  let activeChannel;
+  let seenPlayback = false;
+  let waitForLoadBreak = false;
+  let countThisSpinner = false;
   const pendingRequests = new Map();
 
   function normalizedTimeout(value) {
@@ -26,10 +81,111 @@
     return document.querySelector(SPINNER_SELECTOR);
   }
 
+  function getVideo() {
+    return document.querySelector('[data-a-target="video-player"] video')
+      || document.querySelector('video');
+  }
+
+  function channelFromHref(href) {
+    let url;
+    try {
+      url = new URL(href);
+    } catch {
+      return null;
+    }
+
+    const parts = url.pathname.split('/').filter(Boolean);
+    if (!parts.length) {
+      return null;
+    }
+
+    let slug = parts[0].toLowerCase();
+    if (slug === 'popout' || slug === 'moderator') {
+      slug = (parts[1] || '').toLowerCase();
+    }
+
+    if (!/^[a-z0-9][a-z0-9_]{2,24}$/.test(slug) || RESERVED_ROUTES.has(slug)) {
+      return null;
+    }
+
+    return slug;
+  }
+
+  function videoLooksLive() {
+    const video = getVideo();
+    return Boolean(
+      video &&
+      !getSpinner() &&
+      video.readyState >= 2 &&
+      !video.paused &&
+      !video.seeking
+    );
+  }
+
+  function notePlayback() {
+    if (!videoLooksLive()) {
+      // The player that was already going belongs to the previous page.
+      // Wait until it stops before arming the counter for this channel.
+      waitForLoadBreak = false;
+      return;
+    }
+
+    if (waitForLoadBreak) {
+      return;
+    }
+
+    seenPlayback = true;
+  }
+
+  function isVideoEvent(event) {
+    const target = event.target;
+    return Boolean(target && (target.nodeName === 'VIDEO' || target.tagName === 'VIDEO'));
+  }
+
   function stopTimer() {
     if (timerId !== null) {
       window.clearTimeout(timerId);
       timerId = null;
+    }
+  }
+
+  function clearPendingRequests() {
+    for (const pending of pendingRequests.values()) {
+      window.clearTimeout(pending.timer);
+    }
+    pendingRequests.clear();
+  }
+
+  function resetSpinnerEpisode() {
+    stopTimer();
+    clearPendingRequests();
+    spinnerSince = null;
+    resetAttempted = false;
+    countThisSpinner = false;
+  }
+
+  function notifyChannel(channel) {
+    chrome.runtime.sendMessage({ type: 'channel-loaded', channel }, () => {
+      if (chrome.runtime.lastError) {
+        console.error('Twitch Spinner Reset could not update its reset counter.', chrome.runtime.lastError);
+      }
+    });
+  }
+
+  function syncChannel() {
+    const channel = channelFromHref(location.href);
+    if (channel === activeChannel) {
+      return;
+    }
+
+    const previous = activeChannel;
+    activeChannel = channel;
+    seenPlayback = false;
+    waitForLoadBreak = previous !== undefined && videoLooksLive();
+    resetSpinnerEpisode();
+
+    if (channel) {
+      notifyChannel(channel);
     }
   }
 
@@ -40,11 +196,12 @@
 
     resetAttempted = true;
     const requestId = `${Date.now()}-${++nextRequestId}`;
+    const shouldCount = countThisSpinner;
     const requestTimer = window.setTimeout(() => {
       pendingRequests.delete(requestId);
       console.error('Twitch Spinner Reset did not receive a response from its Twitch player agent.');
     }, REQUEST_TIMEOUT_MS);
-    pendingRequests.set(requestId, requestTimer);
+    pendingRequests.set(requestId, { timer: requestTimer, shouldCount });
     window.postMessage({
       source: MESSAGE_SOURCE,
       type: 'reset-player',
@@ -54,31 +211,24 @@
 
   function checkSpinner() {
     timerId = null;
-    if (!getSpinner()) {
-      spinnerSince = null;
-      resetAttempted = false;
-      return;
-    }
-
-    const elapsed = Date.now() - spinnerSince;
-    if (elapsed >= timeoutMs) {
-      requestPlayerReset();
-      return;
-    }
-
-    timerId = window.setTimeout(checkSpinner, timeoutMs - elapsed);
+    update();
   }
 
   function update() {
+    syncChannel();
     if (!getSpinner()) {
+      notePlayback();
       stopTimer();
       spinnerSince = null;
       resetAttempted = false;
+      countThisSpinner = false;
       return;
     }
 
+    notePlayback();
     if (spinnerSince === null) {
       spinnerSince = Date.now();
+      countThisSpinner = seenPlayback && !waitForLoadBreak;
     }
 
     stopTimer();
@@ -101,9 +251,14 @@
       return;
     }
 
-    window.clearTimeout(pendingRequests.get(message.requestId));
+    const pending = pendingRequests.get(message.requestId);
+    window.clearTimeout(pending.timer);
     pendingRequests.delete(message.requestId);
     if (message.success) {
+      if (!pending.shouldCount) {
+        return;
+      }
+
       chrome.runtime.sendMessage({ type: 'player-reset-succeeded' }, () => {
         if (chrome.runtime.lastError) {
           console.error('Twitch Spinner Reset could not update its reset counter.', chrome.runtime.lastError);
@@ -114,6 +269,18 @@
     }
   });
 
+  document.addEventListener('playing', (event) => {
+    if (isVideoEvent(event)) {
+      notePlayback();
+    }
+  }, true);
+
+  document.addEventListener('timeupdate', (event) => {
+    if (isVideoEvent(event)) {
+      notePlayback();
+    }
+  }, true);
+
   const observer = new MutationObserver(update);
   observer.observe(document.documentElement, {
     attributes: true,
@@ -121,6 +288,11 @@
     childList: true,
     subtree: true
   });
+
+  window.addEventListener('popstate', update);
+  if (window.navigation?.addEventListener) {
+    window.navigation.addEventListener('navigatesuccess', update);
+  }
 
   chrome.storage.sync.get({ spinnerTimeoutMs: DEFAULT_TIMEOUT_MS }, (settings) => {
     if (chrome.runtime.lastError) {
