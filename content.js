@@ -63,6 +63,7 @@
   let resetAttempted = false;
   let nextRequestId = 0;
   let activeChannel;
+  let activeChannelName = '';
   let seenPlayback = false;
   let waitForLoadBreak = false;
   let countThisSpinner = false;
@@ -109,6 +110,43 @@
     }
 
     return slug;
+  }
+
+  function slugFromHref(href) {
+    if (!href) {
+      return '';
+    }
+
+    try {
+      const url = new URL(href, location.origin);
+      return (url.pathname.split('/').filter(Boolean)[0] || '').toLowerCase();
+    } catch {
+      return '';
+    }
+  }
+
+  function channelDisplayName(login) {
+    if (!login || typeof document.querySelectorAll !== 'function') {
+      return '';
+    }
+
+    const headings = document.querySelectorAll('h1.tw-title');
+    for (const heading of headings) {
+      const link = typeof heading.closest === 'function'
+        ? heading.closest('a[href]')
+        : heading.parentElement;
+      const slug = slugFromHref(link?.getAttribute?.('href'));
+      if (slug !== login) {
+        continue;
+      }
+
+      const name = (heading.textContent || '').trim();
+      if (name) {
+        return name;
+      }
+    }
+
+    return '';
   }
 
   function videoLooksLive() {
@@ -164,8 +202,13 @@
     countThisSpinner = false;
   }
 
-  function notifyChannel(channel) {
-    chrome.runtime.sendMessage({ type: 'channel-loaded', channel }, () => {
+  function notifyChannel(channel, channelName) {
+    const message = { type: 'channel-loaded', channel };
+    if (channelName) {
+      message.channelName = channelName;
+    }
+
+    chrome.runtime.sendMessage(message, () => {
       if (chrome.runtime.lastError) {
         console.error('Twitch Spinner Reset could not update its reset counter.', chrome.runtime.lastError);
       }
@@ -174,18 +217,24 @@
 
   function syncChannel() {
     const channel = channelFromHref(location.href);
+    const channelName = channelDisplayName(channel);
     if (channel === activeChannel) {
+      if (channel && channelName && channelName !== activeChannelName) {
+        activeChannelName = channelName;
+        notifyChannel(channel, channelName);
+      }
       return;
     }
 
     const previous = activeChannel;
     activeChannel = channel;
+    activeChannelName = channelName;
     seenPlayback = false;
     waitForLoadBreak = previous !== undefined && videoLooksLive();
     resetSpinnerEpisode();
 
     if (channel) {
-      notifyChannel(channel);
+      notifyChannel(channel, channelName);
     }
   }
 

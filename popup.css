@@ -88,9 +88,13 @@ h1 {
 
 .counter-caption {
   align-self: flex-end;
+  max-width: 148px;
   margin: 0 0 4px auto;
+  overflow: hidden;
   color: #8f8c9d;
   font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .settings-card {

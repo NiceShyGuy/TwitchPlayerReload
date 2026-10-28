@@ -37,7 +37,7 @@ Before publishing, upload the archive through the Chrome Web Store developer das
 
 ## Permissions and data
 
-The extension uses the `storage` permission for the delay and reset count, and needs access to `https://www.twitch.tv/*` to detect and reset the player. The delay uses browser sync storage. The successful-reset count and the channel login that count belongs to use local extension storage. The extension does not include analytics, advertising, or its own external network requests. See [PRIVACY.md](./PRIVACY.md).
+The extension uses the `storage` permission for the delay and reset count, and needs access to `https://www.twitch.tv/*` to detect and reset the player. The delay uses browser sync storage. The successful-reset count, and the channel login and display name that count belongs to, use local extension storage. The extension does not include analytics, advertising, or its own external network requests. See [PRIVACY.md](./PRIVACY.md).
 
 ## Reset behavior and compatibility
 

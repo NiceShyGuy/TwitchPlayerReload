@@ -13,9 +13,26 @@ function storedChannel(settings) {
     : '';
 }
 
+function storedDisplayName(value) {
+  if (typeof value !== 'string') {
+    return '';
+  }
+
+  const name = value.trim();
+  if (!name || name.length > 50 || /[\u0000-\u001f\u007f]/.test(name)) {
+    return '';
+  }
+
+  return name;
+}
+
 function enqueue(update) {
   resetCounterQueue = resetCounterQueue.then(() => new Promise((resolve, reject) => {
-    chrome.storage.local.get({ playerResetCount: 0, playerResetChannel: '' }, (settings) => {
+    chrome.storage.local.get({
+      playerResetCount: 0,
+      playerResetChannel: '',
+      playerResetChannelName: ''
+    }, (settings) => {
       if (chrome.runtime.lastError) {
         reject(chrome.runtime.lastError);
         return;
@@ -60,15 +77,27 @@ chrome.runtime.onMessage.addListener((message, sender) => {
   if (message?.type === 'channel-loaded' && CHANNEL_PATTERN.test(message.channel)) {
     enqueue((settings) => {
       const previous = storedChannel(settings);
+      const channelName = storedDisplayName(message.channelName);
       if (previous === message.channel) {
-        return null;
+        if (!channelName || settings.playerResetChannelName === channelName) {
+          return null;
+        }
+
+        return { playerResetChannelName: channelName };
       }
 
       if (!previous) {
-        return { playerResetChannel: message.channel };
+        return {
+          playerResetChannel: message.channel,
+          playerResetChannelName: channelName
+        };
       }
 
-      return { playerResetCount: 0, playerResetChannel: message.channel };
+      return {
+        playerResetCount: 0,
+        playerResetChannel: message.channel,
+        playerResetChannelName: channelName
+      };
     });
   }
 });

@@ -6,20 +6,41 @@ const timeoutInput = document.querySelector('#timeout');
 const saveButton = document.querySelector('#save');
 const status = document.querySelector('#status');
 const resetCount = document.querySelector('#reset-count');
+const channelName = document.querySelector('#channel-name');
 
-chrome.storage.local.get({ playerResetCount: 0 }, (settings) => {
+function showChannelName(name) {
+  const text = typeof name === 'string' ? name.trim() : '';
+  channelName.textContent = text;
+  if (text) {
+    channelName.title = text;
+  } else {
+    channelName.removeAttribute('title');
+  }
+}
+
+chrome.storage.local.get({ playerResetCount: 0, playerResetChannelName: '' }, (settings) => {
   if (chrome.runtime.lastError) {
     resetCount.textContent = '—';
+    showChannelName('');
     console.error('Twitch Spinner Reset could not load its reset counter.', chrome.runtime.lastError);
     return;
   }
 
   resetCount.textContent = settings.playerResetCount.toLocaleString();
+  showChannelName(settings.playerResetChannelName);
 });
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
-  if (areaName === 'local' && changes.playerResetCount) {
+  if (areaName !== 'local') {
+    return;
+  }
+
+  if (changes.playerResetCount) {
     resetCount.textContent = changes.playerResetCount.newValue.toLocaleString();
+  }
+
+  if (changes.playerResetChannelName) {
+    showChannelName(changes.playerResetChannelName.newValue);
   }
 });
 
